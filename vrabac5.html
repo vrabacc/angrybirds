@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Jednostavna Angry Birds igra</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 20px auto;
+            background-color: #d0f0ff; /* nebo */
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="platno" width="800" height="400"></canvas>
+
+<script>
+// -------------------------------------------
+// OSNOVNE POSTAVKE
+// -------------------------------------------
+
+const platno = document.getElementById("platno");
+const ctx = platno.getContext("2d");
+
+// Ptica
+let ptica = {
+    x: 150,
+    y: 300,
+    poluprecnik: 15,
+    brzinaX: 0.5,
+    brzinaY: 0.5,
+    uLetu: false
+};
+
+// Sidrište praćke
+const sidro = { x: 120, y: 320 };
+
+// Meta
+const meta = { x: 600, y: 260, sirina: 100, visina: 100 };
+
+// Fizika
+const gravitacija = 0.3;
+const otpornostZraka = 0.99;
+
+// Kontrole
+let povlacenje = false;
+let misaX = 0, misaY = 0;
+let score = 0;
+
+// -------------------------------------------
+// CRTANJE
+// -------------------------------------------
+
+function crtajTlo() {
+    ctx.fillStyle = "green";
+    ctx.fillRect(0, 360, 800, 40);
+}
+
+function crtajMetu() {
+    ctx.fillStyle = "brown";
+    ctx.fillRect(meta.x, meta.y, meta.sirina, meta.visina);
+}
+
+function crtajScore() {
+    ctx.fillStyle = "black";
+    ctx.font = "20px Arial";
+    ctx.fillText("Bodovi: " + score, 10, 25);
+}
+
+function crtajPracku() {
+    // Guma (špaga)
+    if (povlacenje) {
+        ctx.beginPath();
+        ctx.moveTo(sidro.x - 5, sidro.y); // lijeva traka
+        ctx.lineTo(ptica.x, ptica.y);
+        ctx.moveTo(sidro.x + 5, sidro.y); // desna traka
+        ctx.lineTo(ptica.x, ptica.y);
+        ctx.strokeStyle = "#654321";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    } else {
+        // Nepovučena praćka
+        ctx.beginPath();
+        ctx.moveTo(sidro.x - 5, sidro.y);
+        ctx.lineTo(sidro.x + 5, sidro.y);
+        ctx.strokeStyle = "#654321";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+
+    // Drvena konstrukcija
+    ctx.beginPath();
+    ctx.moveTo(sidro.x - 10, sidro.y);
+    ctx.lineTo(sidro.x - 10, sidro.y + 40);
+    ctx.moveTo(sidro.x + 10, sidro.y);
+    ctx.lineTo(sidro.x + 10, sidro.y + 40);
+    ctx.strokeStyle = "#8b4513";
+    ctx.lineWidth = 5;
+    ctx.stroke();
+}
+
+function crtajPticu() {
+    ctx.beginPath();
+    ctx.arc(ptica.x, ptica.y, ptica.poluprecnik, 0, Math.PI * 2);
+    ctx.fillStyle = "wine_red";
+    ctx.fill();
+}
+
+// -------------------------------------------
+// GLAVNA PETLJA
+// -------------------------------------------
+
+function azurirajIgru() {
+    ctx.clearRect(0, 0, platno.width, platno.height);
+
+    // Ako je ptica u letu
+    if (ptica.uLetu) {
+        ptica.x += ptica.brzinaX;
+        ptica.y += ptica.brzinaY;
+        ptica.brzinaY += gravitacija;
+        ptica.brzinaX *= otpornostZraka;
+        ptica.brzinaY *= otpornostZraka;
+
+        // Sudar s tlom
+        if (ptica.y + ptica.poluprecnik > 360) {
+            ptica.y = 360 - ptica.poluprecnik;
+            ptica.uLetu = false;
+        }
+
+        // Sudar s metom
+        if (
+            ptica.x + ptica.poluprecnik > meta.x &&
+            ptica.x - ptica.poluprecnik < meta.x + meta.sirina &&
+            ptica.y + ptica.poluprecnik > meta.y &&
+            ptica.y - ptica.poluprecnik < meta.y + meta.visina
+        ) {
+            score++;
+            resetujPticu();
+        }
+
+        // Ako izađe izvan ekrana
+        if (ptica.x > 800 || ptica.y > 400 || ptica.x < 0) {
+            resetujPticu();
+        }
+    }
+
+    crtajTlo();
+    crtajMetu();
+    crtajPracku();
+    crtajPticu();
+    crtajScore();
+
+    requestAnimationFrame(azurirajIgru);
+}
+
+// -------------------------------------------
+// KONTROLA MIŠA
+// -------------------------------------------
+
+platno.addEventListener("mousedown", e => {
+    if (!ptica.uLetu) {
+        const dx = e.offsetX - ptica.x;
+        const dy = e.offsetY - ptica.y;
+        const udaljenost = Math.sqrt(dx*dx + dy*dy);
+        if (udaljenost < ptica.poluprecnik * 2) {
+            povlacenje = true;
+        }
+    }
+});
+
+platno.addEventListener("mousemove", e => {
+    if (povlacenje) {
+        misaX = e.offsetX;
+        misaY = e.offsetY;
+
+        // Ograniči koliko možeš nateći (maks 100 px)
+        const dx = misaX - sidro.x;
+        const dy = misaY - sidro.y;
+        const duzina = Math.sqrt(dx*dx + dy*dy);
+        const maxDuzina = 100;
+
+        if (duzina > maxDuzina) {
+            const ugao = Math.atan2(dy, dx);
+            ptica.x = sidro.x + Math.cos(ugao) * maxDuzina;
+            ptica.y = sidro.y + Math.sin(ugao) * maxDuzina;
+        } else {
+            ptica.x = misaX;
+            ptica.y = misaY;
+        }
+    }
+});
+
+platno.addEventListener("mouseup", e => {
+    if (povlacenje) {
+        povlacenje = false;
+
+        // Izračun brzine – jači faktor da može daleko
+        const snagaFaktor = 0.25; // povećano da može do mete
+        ptica.brzinaX = (sidro.x - ptica.x) * snagaFaktor;
+        ptica.brzinaY = (sidro.y - ptica.y) * snagaFaktor;
+        ptica.uLetu = true;
+    }
+});
+
+// -------------------------------------------
+// RESET
+// -------------------------------------------
+
+function resetujPticu() {
+    ptica.x = 150;
+    ptica.y = 300;
+    ptica.brzinaX = 0;
+    ptica.brzinaY = 0;
+    ptica.uLetu = false;
+}
+
+// -------------------------------------------
+// START
+// -------------------------------------------
+
+azurirajIgru();
+
+</script>
+</body>
+</html>
