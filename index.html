@@ -1,226 +1,265 @@
 <!DOCTYPE html>
-<html>
+<html lang="hr">
 <head>
-    <title>Jednostavna Angry Birds igra</title>
-    <style>
-        canvas {
-            border: 1px solid black;
-            display: block;
-            margin: 20px auto;
-            background-color: #d0f0ff; /* nebo */
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Amar voli Kseniju</title>
+  <style>
+    html,body{height:100%;margin:0;background:#03fc35;font-family:Arial,Helvetica,sans-serif}
+    #game{display:block;margin:20px auto;background:#7ec850;box-shadow:0 6px 18px rgba(0,0,0,0.25)}
+    .ui{width:800px;margin:0 auto;text-align:left;color:#fff}
+    .hud{display:flex;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,0.35);border-radius:6px}
+    .hint{font-size:13px;opacity:0.9}
+    .controls{font-size:13px}
+    .credit{font-size:12px;color:#222;margin-top:6px}
+  </style>
 </head>
 <body>
-
-<canvas id="platno" width="800" height="400"></canvas>
+  <div class="ui">
+    <div class="hud">
+      <div>Rezultat: <span id="score">0</span></div>
+      <div class="hint">Sakupljaj lopticu da dobiješ bod — pozicije se resetuju</div>
+      <div class="controls">Kontrole: strelice ← → ili A/D = pomak, Space = skok</div>
+    </div>
+    <canvas id="game" width="800" height="450"></canvas>
+    <div class="credit">Napomena: Lamar Malagic</div>
+  </div>
 
 <script>
-// -------------------------------------------
-// OSNOVNE POSTAVKE
-// -------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
 
-const platno = document.getElementById("platno");
-const ctx = platno.getContext("2d");
+// Igračke varijable
+let score = 0;
+const gravity = 0.8;
+const friction = 0.85;
 
-// Ptica
-let ptica = {
-    x: 150,
-    y: 300,
-    poluprecnik: 15,
-    brzinaX: 0.5,
-    brzinaY: 0.5,
-    uLetu: false
+// Igrač
+const player = {
+  x: 60,
+  y: H - 120,
+  w: 34,
+  h: 48,
+  vx: 0,
+  vy: 0,
+  speed: 5.4,
+  jumpPower: 19,
+  onGround: false,
+  color: '#283593'
+};
+const playerStart = {x: player.x, y: player.y};
+
+// Platforme (x, y, width, height)
+const platforms = [
+  {x:0, y:H-20, w:W, h:20}, // tlo
+  {x:120, y:H-120, w:140, h:16},
+  {x:320, y:H-200, w:120, h:16},
+  {x:520, y:H-140, w:160, h:16},
+  {x:220, y:H-300, w:90, h:16}
+];
+
+// Loptica (kolekcionarni objekt)
+let ball = {
+  x: 0,
+  y: 0,
+  r: 12,
+  collected: false,
+  color: '#03fce3',
+  baseX: 0,       // početna X pozicija
+  baseY: 0,       // početna Y pozicija
+  angle: 0,       // za animaciju
+  moveSpeed: 0.03,// brzina pomicanja
+  moveRange: 30   // koliko daleko ide lijevo-desno
 };
 
-// Sidrište praćke
-const sidro = { x: 120, y: 320 };
-
-// Meta
-const meta = { x: 600, y: 260, sirina: 100, visina: 100 };
-
-// Fizika
-const gravitacija = 0.3;
-const otpornostZraka = 0.99;
-
 // Kontrole
-let povlacenje = false;
-let misaX = 0, misaY = 0;
-let score = 0;
+const keys = {left:false,right:false,jump:false};
+window.addEventListener('keydown', e => {
+  if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+  if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+  if(e.code === 'Space') keys.jump = true;
+});
+window.addEventListener('keyup', e => {
+  if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+  if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  if(e.code === 'Space') keys.jump = false;
+});
 
-// -------------------------------------------
-// CRTANJE
-// -------------------------------------------
+// Pomoćne funkcije
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 
-function crtajTlo() {
-    ctx.fillStyle = "green";
-    ctx.fillRect(0, 360, 800, 40);
-}
-
-function crtajMetu() {
-    ctx.fillStyle = "brown";
-    ctx.fillRect(meta.x, meta.y, meta.sirina, meta.visina);
-}
-
-function crtajScore() {
-    ctx.fillStyle = "black";
-    ctx.font = "20px Arial";
-    ctx.fillText("Bodovi: " + score, 10, 25);
-}
-
-function crtajPracku() {
-    // Guma (špaga)
-    if (povlacenje) {
-        ctx.beginPath();
-        ctx.moveTo(sidro.x - 5, sidro.y); // lijeva traka
-        ctx.lineTo(ptica.x, ptica.y);
-        ctx.moveTo(sidro.x + 5, sidro.y); // desna traka
-        ctx.lineTo(ptica.x, ptica.y);
-        ctx.strokeStyle = "#654321";
-        ctx.lineWidth = 3;
-        ctx.stroke();
+function placeBallRandom(){
+  const minDistance = 120; // minimalna udaljenost od igrača
+  let valid = false;
+  while(!valid){
+    const choice = Math.random();
+    if(choice < 0.8){
+      const picks = platforms.filter(p => p.h < 30 && p.y < H-40);
+      const p = picks[Math.floor(Math.random()*picks.length)];
+      ball.x = clamp(p.x + 20 + Math.random()*(p.w-40), 20, W-20);
+      ball.y = p.y - ball.r - 2;
     } else {
-        // Nepovučena praćka
-        ctx.beginPath();
-        ctx.moveTo(sidro.x - 5, sidro.y);
-        ctx.lineTo(sidro.x + 5, sidro.y);
-        ctx.strokeStyle = "#654321";
-        ctx.lineWidth = 3;
-        ctx.stroke();
+      ball.x = 50 + Math.random()*(W-100);
+      ball.y = H - 40 - ball.r;
     }
 
-    // Drvena konstrukcija
-    ctx.beginPath();
-    ctx.moveTo(sidro.x - 10, sidro.y);
-    ctx.lineTo(sidro.x - 10, sidro.y + 40);
-    ctx.moveTo(sidro.x + 10, sidro.y);
-    ctx.lineTo(sidro.x + 10, sidro.y + 40);
-    ctx.strokeStyle = "#8b4513";
-    ctx.lineWidth = 5;
-    ctx.stroke();
+    const dx = (player.x + player.w/2) - ball.x;
+    const dy = (player.y + player.h/2) - ball.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    if(dist > minDistance) valid = true;
+  }
+
+  // Spremi osnovne pozicije za pomicanje
+  ball.baseX = ball.x;
+  ball.baseY = ball.y;
+  ball.angle = Math.random() * Math.PI * 2;
+  ball.collected = false;
 }
 
-function crtajPticu() {
+
+function resetPositions(){
+  player.x = playerStart.x;
+  player.y = playerStart.y;
+  player.vx = 0; player.vy = 0; player.onGround = false;
+  placeBallRandom();
+}
+
+function rectVsRect(a,b){
+  return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
+}
+
+function update(){
+  // Horizontal movement
+  if(keys.left) player.vx = -player.speed;
+  else if(keys.right) player.vx = player.speed;
+  else player.vx = 0;
+  // Pomicanje loptice (lijevo-desno)
+  ball.angle += ball.moveSpeed;
+  ball.x = ball.baseX + Math.sin(ball.angle) * ball.moveRange;
+
+  // Jump
+  if(keys.jump && player.onGround){
+    player.vy = -player.jumpPower;
+    player.onGround = false;
+  }
+
+  // Apply gravity
+  player.vy += gravity;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Ograničenja po stranama
+  if(player.x < 0) player.x = 0; if(player.x + player.w > W) player.x = W - player.w;
+
+  // Sudar sa platformama - jednostavan pristup: provjeri samo kada se pada
+  player.onGround = false;
+  for(let p of platforms){
+    const platRect = {x:p.x, y:p.y, w:p.w, h:p.h};
+    const playerRect = {x:player.x, y:player.y, w:player.w, h:player.h};
+    if(rectVsRect(playerRect, platRect)){
+      // Ako je igrač iznad platforme (prije sudara bio iznad), pritisnemo ga na platformu
+      if(player.vy >= 0 && player.y + player.h - player.vy <= p.y + 5){
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      } else {
+        // Manje robusno: spriječi prolazak kroz platformu s bočne strane
+        if(player.x < p.x) player.x = p.x - player.w - 0.1;
+        else player.x = p.x + p.w + 0.1;
+        player.vx = 0;
+      }
+    }
+  }
+
+  // Ako upadne ispod ekrana - reset na start bez bodovanja
+  if(player.y > H + 200){
+    resetPositions();
+  }
+
+  // Provjera sakupljanja loptice
+  const dx = (player.x + player.w/2) - ball.x;
+  const dy = (player.y + player.h/2) - ball.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist < ball.r + Math.max(player.w, player.h)/3 && !ball.collected){
+    ball.collected = true;
+    score += 1;
+    document.getElementById('score').textContent = score;
+    // kratko vizualno i odmah resetujemo pozicije
+    setTimeout(()=>{
+      resetPositions();
+    }, 220);
+  }
+}
+
+function drawGrid(){
+  // Nebitno za igru, daje malo dubine
+  for(let i=0;i<6;i++){
+    ctx.fillStyle = i%2? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)';
+    ctx.fillRect(0, H - 20 - i*12, W, 6);
+  }
+}
+
+function draw(){
+  // pozadina (nebo)
+  ctx.clearRect(0,0,W,H);
+
+  // travnati spritz
+  drawGrid();
+
+  // Platforme
+  for(let p of platforms){
+    ctx.fillStyle = '#6f4c41';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    // rub
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.strokeRect(p.x, p.y, p.w, p.h);
+  }
+
+  // Loptica
+  if(!ball.collected){
     ctx.beginPath();
-    ctx.arc(ptica.x, ptica.y, ptica.poluprecnik, 0, Math.PI * 2);
-    ctx.fillStyle = "wine_red";
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = ball.color;
     ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.stroke();
+  }
+
+  // Igrač
+  ctx.fillStyle = player.color;
+  // trup
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  // glava
+  ctx.fillStyle = '#ffeb02';
+  ctx.fillRect(player.x + 6, player.y - 10, player.w - 12, 12);
+  // oči
+  ctx.fillStyle = '#000';
+  ctx.fillRect(player.x + 12, player.y - 8, 4, 4);
+  ctx.fillRect(player.x + 20, player.y - 8, 4, 4);
+
+  // blagi sjaj
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(player.x, player.y, player.w, player.h/2);
+  ctx.globalAlpha = 1;
 }
 
-// -------------------------------------------
-// GLAVNA PETLJA
-// -------------------------------------------
-
-function azurirajIgru() {
-    ctx.clearRect(0, 0, platno.width, platno.height);
-
-    // Ako je ptica u letu
-    if (ptica.uLetu) {
-        ptica.x += ptica.brzinaX;
-        ptica.y += ptica.brzinaY;
-        ptica.brzinaY += gravitacija;
-        ptica.brzinaX *= otpornostZraka;
-        ptica.brzinaY *= otpornostZraka;
-
-        // Sudar s tlom
-        if (ptica.y + ptica.poluprecnik > 360) {
-            ptica.y = 360 - ptica.poluprecnik;
-            ptica.uLetu = false;
-        }
-
-        // Sudar s metom
-        if (
-            ptica.x + ptica.poluprecnik > meta.x &&
-            ptica.x - ptica.poluprecnik < meta.x + meta.sirina &&
-            ptica.y + ptica.poluprecnik > meta.y &&
-            ptica.y - ptica.poluprecnik < meta.y + meta.visina
-        ) {
-            score++;
-            resetujPticu();
-        }
-
-        // Ako izađe izvan ekrana
-        if (ptica.x > 800 || ptica.y > 400 || ptica.x < 0) {
-            resetujPticu();
-        }
-    }
-
-    crtajTlo();
-    crtajMetu();
-    crtajPracku();
-    crtajPticu();
-    crtajScore();
-
-    requestAnimationFrame(azurirajIgru);
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
 }
 
-// -------------------------------------------
-// KONTROLA MIŠA
-// -------------------------------------------
+// Inicijalizacija
+resetPositions();
+loop();
 
-platno.addEventListener("mousedown", e => {
-    if (!ptica.uLetu) {
-        const dx = e.offsetX - ptica.x;
-        const dy = e.offsetY - ptica.y;
-        const udaljenost = Math.sqrt(dx*dx + dy*dy);
-        if (udaljenost < ptica.poluprecnik * 2) {
-            povlacenje = true;
-        }
-    }
-});
-
-platno.addEventListener("mousemove", e => {
-    if (povlacenje) {
-        misaX = e.offsetX;
-        misaY = e.offsetY;
-
-        // Ograniči koliko možeš nateći (maks 100 px)
-        const dx = misaX - sidro.x;
-        const dy = misaY - sidro.y;
-        const duzina = Math.sqrt(dx*dx + dy*dy);
-        const maxDuzina = 100;
-
-        if (duzina > maxDuzina) {
-            const ugao = Math.atan2(dy, dx);
-            ptica.x = sidro.x + Math.cos(ugao) * maxDuzina;
-            ptica.y = sidro.y + Math.sin(ugao) * maxDuzina;
-        } else {
-            ptica.x = misaX;
-            ptica.y = misaY;
-        }
-    }
-});
-
-platno.addEventListener("mouseup", e => {
-    if (povlacenje) {
-        povlacenje = false;
-
-        // Izračun brzine – jači faktor da može daleko
-        const snagaFaktor = 0.25; // povećano da može do mete
-        ptica.brzinaX = (sidro.x - ptica.x) * snagaFaktor;
-        ptica.brzinaY = (sidro.y - ptica.y) * snagaFaktor;
-        ptica.uLetu = true;
-    }
-});
-
-// -------------------------------------------
-// RESET
-// -------------------------------------------
-
-function resetujPticu() {
-    ptica.x = 150;
-    ptica.y = 300;
-    ptica.brzinaX = 0;
-    ptica.brzinaY = 0;
-    ptica.uLetu = false;
-}
-
-// -------------------------------------------
-// START
-// -------------------------------------------
-
-azurirajIgru();
-
+// Dodatne kratke upute (neobavezno)
+// - Možeš promijeniti platforme u array-u platforms
+// - Možeš promijeniti brzinu i skok u player.speed i player.jumpPower
 </script>
 </body>
 </html>
